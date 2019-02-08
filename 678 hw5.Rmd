@@ -1,0 +1,312 @@
+---
+title: "MA678 homework 05"
+subtitle: "Multinomial Regression"
+author: "Shiyu Zhang"
+date: "Oct, 2018"
+output:
+     pdf_document:
+         latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,out.width="0.9\\linewidth",dev="pdf",fig.align  = 'center')
+pacman::p_load(
+  "ggplot2",
+  "knitr",
+  "arm",
+  "data.table",
+  "foreign",
+  "car",
+  "faraway",
+  "nnet",
+  "reshape2",
+  "VGAM"
+)
+```
+
+## Multinomial logit: 
+Using the individual-level survey data from the 2000 National Election Study (data in folder nes), predict party identification (which is on a 7-point scale) using ideology and demographics with an ordered multinomial logit model.
+```{r, echo=FALSE}
+nes5200<-read.dta("http://www.stat.columbia.edu/~gelman/arm/examples/nes/nes5200_processed_voters_realideo.dta")
+#saveRDS(nes5200,"nes5200.rds")
+#nes5200<-readRDS("nes5200.rds")
+# logistic regression of vote preference on income
+nes5200_dt <- data.table(nes5200)
+  yr <- 2000
+nes5200_dt_s<-nes5200_dt[ year==yr,]
+nes5200_dt_s$income <- droplevels(nes5200_dt_s$income)
+nes5200_dt_s$partyid7 <- droplevels(nes5200_dt_s$partyid7)
+
+nes5200_dt_s$gender <- factor(nes5200_dt_s$gender, labels=c("male", "female"))
+nes5200_dt_s$race <- factor(nes5200_dt_s$race, labels=c("white", "black", "asian", 
+                                    "native american", "hispanic"))
+nes5200_dt_s$south <- factor(nes5200_dt_s$south)
+nes5200_dt_s$ideo <- factor(nes5200_dt_s$ideo, labels=c("liberal", "moderate", "conservative"))
+
+nes_data_comp<-nes5200_dt_s[complete.cases(nes5200_dt_s[,list(partyid7,income,ideo,female,white)])]
+nes_data_comp$ideology <- scale(nes_data_comp$ideo_feel,center=TRUE)
+```
+1. Summarize the parameter estimates numerically and also graphically. 
+
+```{r}
+m1 <- polr(partyid3 ~ ideo + race + age_10, Hess=TRUE, data=nes_data_comp)
+summary(m1)
+```
+
+2. Explain the results from the fitted model.
+```{r}
+
+confint(m1)
+
+"ideo: moderates and conservatives are more likely to be republicans. In particular, 
+a moderate has 1.07 increase in the expected value on the log odds scale, given all 
+of the other variables in the model are held constant. Conservatives have a 2.37 
+increase in the log odds scale.
+
+race: whites, and asian are more likely to identify themselves as republicans. 
+
+age_10: One unit increase in age, we expect a decrease 0.07 (-0.07) in the expect
+value of partyid3 on the log odds scale, given all of the other variables in the model are held constant"
+
+```
+
+3. Use a binned residual plot to assess the fit of the model.
+```{r}
+
+a1<- nnet::multinom(partyid7 ~ ideology + dem_therm, data = nes_data_comp)
+binnedplot(fitted(a1), resid(a1))
+
+
+```
+
+
+
+
+# High School and Beyond 
+The hsb data was collected as a subset of the High School and Beyond study conducted by the National Education Longitudinal Studies program of the National Center for Education Statistics. The variables are gender; race; socioeconomic status; school type; chosen high school program type; scores on reading, writing, math, science, and social studies. We want to determine which factors are related to the choice of the type of program—academic, vocational, or general—that the students pursue in high school. The response is multinomial with three levels.
+
+```{r}
+data(hsb)
+?hsb
+```
+
+1. Fit a trinomial response model with the other relevant variables as predictors (untransformed).
+```{r}
+
+require(nnet)
+m2 <- multinom(prog ~ gender + race + ses + schtyp + read + write + math +science + socst, hsb, trace = FALSE)
+
+summary(m2)
+
+```
+
+2. For the student with id 99, compute the predicted probabilities of the three possible choices.
+
+```{r}
+m3 <- step(m2, scope=~., direction="backward", trace = FALSE)
+summary(m3)
+library(tidyverse)
+predict <- hsb %>% filter(id == 99)
+predict$prog
+predict(m2, newdata = predict, type = "probs")
+
+```
+
+
+# Happiness
+Data were collected from 39 students in a University of Chicago MBA class and may be found in the dataset `happy`.
+```{r}
+library(faraway)
+data(happy)
+?happy
+
+```
+
+1. Build a model for the level of happiness as a function of the other variables.
+```{r}
+hap1 <- multinom(happy ~ money + sex+ love +work, data = happy)
+summary(hap1)
+
+```
+
+2. Interpret the parameters of your chosen model.
+```{r}
+round(confint(hap1),2)
+
+```
+
+3. Predict the happiness distribution for subject whose parents earn $30,000 a year,
+who is lonely, not sexually active and has no job.
+```{r}
+(p1 <- data.frame(money = 30, sex = 0, love = 1, work =1))
+predict(hap1, newdata = p1, type = "probs" )
+```
+
+# newspaper survey on Vietnam War
+A student newspaper conducted a survey of student opinions about the Vietnam War in May 1967. Responses were classified by sex, year in the program and one of four opinions. The survey was voluntary. The data may be found in the dataset `uncviet`.  Treat the opinion as the response and the sex and year as predictors. Build a proportional odds model, giving an interpretation to the estimates.
+
+```{r}
+data(uncviet)
+?uncviet
+m4 <- multinom(policy ~ sex + year, weights = y, data = uncviet)
+summary(m4)
+
+"for policy B, the yearGrad has a coefficient of 0.719 which shows that the grad students are more 
+likely to choose policy B. The same method for the other type of students, males have a negative 
+coefficient on the policy B,C,D. and Junior students are more likely to choose policy D compare to policy
+B and C."
+```
+
+# pneumonoconiosis of coal miners
+The pneumo data gives the number of coal miners classified by radiological examination into one of three categories of pneumonoconiosis and by the number of years spent working at the coal face divided into eight categories.
+
+```{r}
+library(faraway)
+data(pneumo,package="faraway")
+?pneumo
+```
+
+1. Treating the pneumonoconiosis status as response variable as nominal, build a model for predicting the frequency of the three outcomes in terms of length of service and use it to predict the outcome for a miner with 25 years of service.
+
+```{r}
+pne1 <- multinom(status ~ year,weights = Freq, data = pneumo)
+summary(pne1)
+
+#predict the miner with 25 years of service
+p2 <- data.frame(year=25)
+predict(pne1, newdata = p2, type = "probs")
+
+```
+
+2. Repeat the analysis with the pneumonoconiosis status being treated as ordinal. 
+
+```{r}
+
+pne2 <- polr(status ~ year, weights = Freq, data = pneumo)
+summary(pne2)
+
+#predict the miner with 25 years of service
+p3 <- data.frame(year=25)
+predict(pne2, newdata =p3, type = "probs")
+
+```
+
+3.Now treat the response variable as hierarchical with top level indicating whether
+the miner has the disease and the second level indicating, given they have the
+disease, whether they have a moderate or severe case. 
+
+```{r}
+
+
+```
+
+4.  Compare the three analyses.
+
+```{r}
+#There is not a significant difference between nominal and ordinal model
+```
+
+
+
+
+
+# (optional) Multinomial choice models: 
+
+Pardoe and Simonton (2006) fit a discrete choice model to predict winners of the Academy Awards. Their data are in the folder academy.awards.
+
+name  | description
+------|----------------------------------------
+No    | unique nominee identifier
+Year  | movie release year (not ceremony year)
+Comp  | identifier for year/category
+Name  | short nominee name
+PP    | best picture indicator
+DD    | best director indicator
+MM    | lead actor indicator
+FF    | lead actress indicator
+Ch    | 1 if win, 2 if lose
+Movie | short movie name
+Nom   | total oscar nominations
+Pic   | picture nom
+Dir   | director nom
+Aml   | actor male lead nom
+Afl   | actor female lead nom
+Ams   | actor male supporting nom
+Afs   | actor female supporting nom
+Scr   | screenplay nom
+Cin   | cinematography nom
+Art   | art direction nom
+Cos   | costume nom
+Sco   | score nom
+Son   | song nom
+Edi   | editing nom
+Sou   | sound mixing nom
+For   | foreign nom
+Anf   | animated feature nom
+Eff   | sound editing/visual effects nom
+Mak   | makeup nom
+Dan   | dance nom
+AD    | assistant director nom
+PrNl  | previous lead actor nominations
+PrWl  | previous lead actor wins
+PrNs  | previous supporting actor nominations
+PrWs  | previous supporting actor wins
+PrN   | total previous actor/director nominations
+PrW   | total previous actor/director wins
+Gdr   | golden globe drama win
+Gmc   | golden globe musical/comedy win
+Gd    | golden globe director win
+Gm1   | golden globe male lead actor drama win
+Gm2   | golden globe male lead actor musical/comedy win
+Gf1   | golden globe female lead actor drama win
+Gf2   | golden globe female lead actor musical/comedy win
+PGA   | producer's guild of america win
+DGA   | director's guild of america win
+SAM   | screen actor's guild male win
+SAF   | screen actor's guild female win
+PN    | PP*Nom
+PD    | PP*Dir
+DN    | DD*Nom
+DP    | DD*Pic
+DPrN  | DD*PrN
+DPrW  | DD*PrW
+MN    | MM*Nom
+MP    | MM*Pic
+MPrN  | MM*PrNl
+MPrW  | MM*PrWl
+FN    | FF*Nom
+FP    | FF*Pic
+FPrN  | FF*PrNl
+FPrW  | FF*PrWl
+
+```{r, echo=FALSE}
+# coefficient for black in 1964 to illustrate nonidentifiability of logistic regression for chap 5 hwk
+oscar<-read.csv("http://www.stat.columbia.edu/~gelman/arm/examples/academy.awards/oscars.csv",header=TRUE)
+#saveRDS(oscar,"oscar.rds")
+#oscar<-readRDS("oscar.rds")
+```
+
+1. Fit your own model to these data.
+
+```{r}
+
+model1 <-  select(oscar, -c("Comp","Name", "Movie"))
+fit.model<- multinom(Ch ~. , data = model1)
+
+model2 <- multinom(Ch ~ Year +  Gm1 + Gf1 +Gf2 +PGA +DGA+SAM , data = model1)
+
+summary(model2)
+
+```
+
+2. Display the fitted model on a plot that also shows the data.
+
+```{r}
+
+```
+
+3. Make a plot displaying the uncertainty in inferences from the fitted model.
+
+```{r}
+
+```
